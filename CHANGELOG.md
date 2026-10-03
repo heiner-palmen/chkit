@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-10-03)
+
+- Tempo map: the same operation order as the readers chkit replaced, so note times are bit-identical to them (a difference in the 15th digit changed a cut point in the shorts extractor at near ties).
+
 ## 0.1.0 (2026-10-03)
 
 First version, taken from the tools that had their own copies:

@@ -22,7 +22,8 @@ class TempoMap:
         self._seconds: list[float] = []
         t, prev_tick, prev_bpm = 0.0, changes[0][0], changes[0][1]
         for tick, bpm in changes:
-            t += (tick - prev_tick) / resolution * 60.0 / prev_bpm
+            # same operation order as the readers chkit replaced: bit-identical times
+            t += (tick - prev_tick) / resolution * (60.0 / prev_bpm)
             self._ticks.append(tick)
             self._seconds.append(t)
             prev_tick, prev_bpm = tick, bpm
@@ -32,7 +33,7 @@ class TempoMap:
 
     def tick_to_s(self, tick: float) -> float:
         i = max(bisect_right(self._ticks, tick) - 1, 0)
-        return self._seconds[i] + (tick - self._ticks[i]) / self.resolution * 60.0 / self.changes[i][1]
+        return self._seconds[i] + (tick - self._ticks[i]) / self.resolution * (60.0 / self.changes[i][1])
 
     def s_to_tick(self, seconds: float) -> float:
         """The (fractional) tick at a time in seconds."""
