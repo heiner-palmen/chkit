@@ -172,6 +172,19 @@ class MidiFileTest(unittest.TestCase):
                           (960, "yellow", True), (960, "green", True)])
         self.assertEqual((c.cymbal_source, c.drum_type), ("markers", "4lane_pro"))
 
+    def test_every_tom_marked_on_its_own(self):
+        # some charts put a short tom marker under every tom note: thousands of spans
+        notes, want = [], []
+        for i in range(3000):
+            tick = i * 120
+            tom = i % 3 != 0
+            notes.append((tick, 99, 10, 100))
+            if tom:
+                notes.append((tick, 111, 60, 100))
+            want.append(not tom)
+        c = self.read([drums(notes)])
+        self.assertEqual([n.cymbal for n in c.notes], want)
+
     def test_pro_flag_plain_and_five_lane(self):
         notes = [(0, 98, 10, 100), (480, 99, 10, 100)]
         self.assertEqual([n.cymbal for n in self.read([drums(notes)], {"pro_drums": "True"}).notes], [True, True])

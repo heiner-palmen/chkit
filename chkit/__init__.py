@@ -10,4 +10,4 @@ Standard library only (Python 3.10+); chkit.game types through evdev
 (pip install "chkit[game]").
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import struct
+from bisect import bisect_right
 from typing import Optional
 
 from ..song import ini_next_to, to_bool
@@ -151,8 +152,14 @@ def read_mid(path: str, difficulty: str = "expert", ini: Optional[dict] = None) 
     for note, start in held.items():                    # never released: to the end of the track
         spans.setdefault(note, []).append((start, end))
 
+    # the spans of one pitch follow each other without overlap (a second note-on
+    # while held is ignored), so the last span starting at or before a tick is
+    # the only one that can hold it; charts that mark every tom have thousands
+    starts = {note: [a for a, _ in ranges] for note, ranges in spans.items()}
+
     def held_at(note: int, tick: int) -> bool:
-        return any(a <= tick < b for a, b in spans.get(note, ()))
+        i = bisect_right(starts.get(note, ()), tick) - 1
+        return i >= 0 and tick < spans[note][i][1]
 
     tom_lanes = {lane: note for note, lane in TOM_MARKERS.items()}
     has_markers = any(spans.get(n) for n in TOM_MARKERS)

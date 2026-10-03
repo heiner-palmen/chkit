@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (2026-10-03)
+
+- `.mid` reader: tom markers and flams are looked up by bisection instead of a scan over all marker spans per note. A discography chart (199,002 notes, every tom marked on its own) took 33 s to read, now 1.1 s.
+
 ## 0.2.0 (2026-10-03)
 
 - `chkit.game` (Linux, X11), taken from clonehero_scripts (`ch_screen.py`, `ch_autotype.py`): `screen` reads the Clone Hero window and tells which part of the song menu it shows; `search` puts the cursor of the song list on a song (`find_song`) or on the first song of an artist (`find_artist`, new), every key sent only where the screen shows it means what it should.
