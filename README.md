@@ -8,6 +8,7 @@ Building blocks for Clone Hero tools, in plain Python (standard library only, Py
 | `chkit.song` | Song folders: `song.ini` (UTF-8 or cp1252), the chart file Clone Hero plays, its MD5 (the checksum Clone Hero keys scores by), audio tracks, text helpers (formatting tags, charter lists, accent-free search keys). |
 | `chkit.chfiles` | Files of the game: `currentsong.txt`, `scorestats.json`, `scoredata.bin` (decoded: playcount, best score, stars, percent, full combo), MIDI profiles (which kit note is which pad), and a simple playlist format. |
 | `chkit.io` | Atomic writes (temp file + rename), copying from network folders through a child process with a timeout (a stale CIFS mount cannot hang the caller), JSON that tolerates half-written files. |
+| `chkit.game` | Drives the running game (Linux, X11/Xwayland): reads its window to tell which menu is up, and puts the cursor of the song list on a song or an artist. Keys go out only where the screen shows they mean what they should. |
 
 ```python
 from chkit import chart, song
@@ -18,6 +19,24 @@ for note in c.notes:
     print(note.t, note.lane, "cymbal" if note.cymbal else "")
 print(c.bar_lines()[:4], c.section_at(60.0))
 print(song.chart_md5(song.find_chart("Songs/Dio - The Last in Line")))
+```
+
+## Searching a song in the running game
+
+```python
+from chkit.game import search
+
+failed = search.find_song({"artist": "Dio", "name": "The Last in Line",
+                           "path": "Songs/Dio - The Last in Line"})
+failed = search.find_artist("Dio")          # the first song of the artist
+print("found" if failed is None else f"stopped: {failed}")
+```
+
+Clone Hero has no interface for this, so `chkit.game.screen` reads a few fixed spots of the window (measured at 1280x720 with v1.1.0.6142, scaled to the real size). When the window cannot be read, a song is running or a step does not show up, the search stops and returns why; it types blindly only with `find_song(..., blind=True)`, meant for someone sitting at the game. Keys go through a virtual keyboard: install `chkit[game]` (evdev) and give the user write access to `/dev/uinput`. Text is typed for the German QWERTZ layout.
+
+```bash
+python3 -m chkit.game.screen --watch                  # what the window shows, on every change
+python3 -m chkit.game.search "Dio" "The Last in Line"    # try a search by hand
 ```
 
 ## Cymbals and toms
@@ -35,6 +54,7 @@ Copy or clone it next to your tool and put the folder on `sys.path`, or install 
 
 ```bash
 pip install git+https://github.com/heiner-palmen/chkit.git
+pip install "chkit[game] @ git+https://github.com/heiner-palmen/chkit.git"    # with typing into the game
 ```
 
 ## Tests
