@@ -1,0 +1,48 @@
+# chkit
+
+Building blocks for Clone Hero tools, in plain Python (standard library only, Python 3.10+).
+
+| Module | What it does |
+|---|---|
+| `chkit.chart` | Reads the drum track of `.chart` and `.mid` files (any difficulty) into one model: notes with lane, cymbal/tom, Expert+ kick, accent, ghost, flam; tempo map (tick ↔ seconds); time signatures; sections; bar lines; star power, fills and rolls. Writes `.chart`. |
+| `chkit.song` | Song folders: `song.ini` (UTF-8 or cp1252), the chart file Clone Hero plays, its MD5 (the checksum Clone Hero keys scores by), audio tracks, text helpers (formatting tags, charter lists, accent-free search keys). |
+| `chkit.chfiles` | Files of the game: `currentsong.txt`, `scorestats.json`, `scoredata.bin` (decoded: playcount, best score, stars, percent, full combo), MIDI profiles (which kit note is which pad), and a simple playlist format. |
+| `chkit.io` | Atomic writes (temp file + rename), copying from network folders through a child process with a timeout (a stale CIFS mount cannot hang the caller), JSON that tolerates half-written files. |
+
+```python
+from chkit import chart, song
+from chkit.chfiles import scorestats
+
+c = chart.read("Songs/Dio - The Last in Line/notes.mid")      # Expert, song.ini next to it
+for note in c.notes:
+    print(note.t, note.lane, "cymbal" if note.cymbal else "")
+print(c.bar_lines()[:4], c.section_at(60.0))
+print(song.chart_md5(song.find_chart("Songs/Dio - The Last in Line")))
+```
+
+## Cymbals and toms
+
+- **`.mid`**: in a pro-drums chart yellow, blue and green are cymbals by default. The notes 110/111/112 are *tom markers*: notes of their colour are toms while the marker is held. A chart without tom markers is pro if `song.ini` says `pro_drums = True` (then every yellow/blue/green note is a cymbal), otherwise a plain 4-lane chart (all toms).
+- **`.chart`**: cymbals are marked explicitly (notes 66/67/68); without markers there are only toms.
+- **5-lane** charts (`five_lane_drums`, or a 5-lane green note) have a fixed layout: yellow and orange are cymbals. They are mapped onto the 4-lane names; `Note.pad` keeps the raw pad.
+- Accents and ghosts in `.mid` count only when the track enables dynamics (`[ENABLE_CHART_DYNAMICS]`).
+
+Sources: TheNathannator, [GuitarGame_ChartFormats](https://thenathannator.github.io/GuitarGame_ChartFormats/) (`.mid` and `.chart` drums); Rock Band Network drum authoring docs.
+
+## Install
+
+Copy or clone it next to your tool and put the folder on `sys.path`, or install it:
+
+```bash
+pip install git+https://github.com/heiner-palmen/chkit.git
+```
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+## License
+
+MIT
