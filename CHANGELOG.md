@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 (2026-10-04)
+
+- `chkit.game.practice`: sets up Clone Hero's practice mode for one spot of a song, from the menu or the score screen: Practice, the song (the same search), its section, then A and B moved by Seek in the pause menu (0.25 s a press), and play. `next()` goes to the next spot through NEW SECTION, so A and B always start from the known section bounds. A is checked afterwards by the seek the game writes to `Player.log` and set again when a key press got lost; a wrong idea of the running section is put right by what A shows. Measured with v1.1.0.6142: Enter pauses, B may pass the end of the section, the list of sections opens on the running one.
+- `chkit.game.screen`: the highlighted row of the main menu, the practice mode's list of sections and pause menu, the Seek legend, and the times of A and B read digit by digit. Quickplay's pause menu and its dialogs are told apart from the practice mode's.
+- `GameWindow.grab()` throws away the reads of the first 200 ms after a pause: under Xwayland the first requests after a while return the picture from before, which made a menu look as if a key had not arrived.
+
 ## 0.3.0 (2026-10-04)
 
 - `chkit.groove`: groove fingerprint of a drum chart (the averaged bar pattern of kick, snare, cymbals and toms on a 12-per-quarter grid, tempo, feel numbers, a one-line summary such as `4/4 · 8ths · snare 2+4 · 172 BPM`) and `similarity()` of two fingerprints: pattern first, then tempo, then feel; a song played at double tempo counts as alike, slightly less than the same pattern.

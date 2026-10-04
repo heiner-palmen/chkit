@@ -9,7 +9,7 @@ Building blocks for Clone Hero tools, in plain Python (standard library only, Py
 | `chkit.chfiles` | Files of the game: `currentsong.txt`, `scorestats.json`, `scoredata.bin` (decoded: playcount, best score, stars, percent, full combo), MIDI profiles (which kit note is which pad), and a simple playlist format. |
 | `chkit.io` | Atomic writes (temp file + rename), copying from network folders through a child process with a timeout (a stale CIFS mount cannot hang the caller), JSON that tolerates half-written files. |
 | `chkit.groove` | A groove fingerprint per chart (bar pattern per voice, tempo, feel, a one-line summary) and how alike two songs feel to play, 0–100 %, with the reasons. |
-| `chkit.game` | Drives the running game (Linux, X11/Xwayland): reads its window to tell which menu is up, and puts the cursor of the song list on a song or an artist. Keys go out only where the screen shows they mean what they should. |
+| `chkit.game` | Drives the running game (Linux, X11/Xwayland): reads its window to tell which menu is up, puts the cursor of the song list on a song or an artist, and sets up the practice mode for a spot (section, A and B). Keys go out only where the screen shows they mean what they should. |
 
 ```python
 from chkit import chart, song
@@ -53,6 +53,25 @@ Clone Hero has no interface for this, so `chkit.game.screen` reads a few fixed s
 python3 -m chkit.game.screen --watch                  # what the window shows, on every change
 python3 -m chkit.game.search "Dio" "The Last in Line"    # try a search by hand
 ```
+
+## Practising a spot in the running game
+
+```python
+from chkit.game import practice, screen, search
+from evdev import UInput
+
+spot = {"section": 1, "section_start": 13.056, "section_end": 23.587,   # the chart's 2nd section
+        "a": 19.661, "b": 24.896}                                       # the loop, seconds
+window = screen.GameWindow()
+with UInput(name=search.UINPUT_NAME) as ui:
+    keys = search.Keyboard(ui)
+    finder = search.SongSearch(keys, window.grab, search.song_running, search.Selection())
+    mode = practice.PracticeMode(keys, window.grab, search.song_running, finder,
+                                 seek_log=practice.SeekLog())
+    failed = mode.start("Kickstand", "Soundgarden", None, spot)   # or mode.next(spot, previous)
+```
+
+From the main menu, the song list or the score screen it opens Practice, searches the song, chooses the section the spot starts in and moves A and B with Seek in the pause menu: A lands on `a` or up to 0.25 s before it, B on `b` or after it (B may pass the end of the section). After RESUME the game writes `Seeking to song time:<A - practice_delay>` to `Player.log`; `SeekLog` reads it, and A is set once more when a key press got lost. Every key waits for the screen; with Quickplay's pause menu, a song running elsewhere or a step that does not show up it stops and returns why.
 
 ## Cymbals and toms
 
