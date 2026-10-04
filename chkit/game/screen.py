@@ -13,6 +13,13 @@ Linux, X11 (also Xwayland); libX11 through ctypes, no extra packages.
   sort_row(pic)            highlighted row of the Sort List (0 = Song, 1 = Artist), or None
   dialog_open(pic)         the search dialog is open
   filter_is_song(pic)      the search dialog says "Searching for: Song"
+  main_row(pic)            highlighted row of the main menu (PRACTICE_ROW = Practice), or None
+  section_list(pic)        practice mode: the list of sections is up
+  section_row(pic)         its highlighted row as it stands on the screen (0 = top), or None
+  pause_menu(pic)          the pause menu is up (Quickplay or practice)
+  pause_row(pic)           its highlighted row (RESUME, RESTART_SECTION, SET_A, SET_B, ...), or None
+  ab_shown(pic)            the pause menu is the practice mode's (it shows A and B)
+  ab_time(pic, "A")        the time of A (or "B") in whole seconds, or None
   describe(pic)            all of it in one word, for logs
 
 Clone Hero has no interface for this, so it is read off the picture: a few
@@ -66,6 +73,45 @@ TAB_SHARE = 0.015                          # measured 0.032
 TITLE_BOX = (445, 279, 835, 300)
 BOLD_WHITE = 232
 SONG_WIDTH = (40, 54.5)
+# Main menu: seven rows (QUICKPLAY, VERSUS, ONLINE, PRACTICE, NEWS, SETTINGS,
+# QUIT); the highlighted one is a light bar, looked at right of the longest
+# text. Legend at the bottom: "Confirm / Back / (Hold) Enter Leaderboards Mode".
+MAIN_LEGEND = (("green", 459, 629), ("red", 538, 629))
+MAIN_ROWS = (207, 263, 319, 375, 431, 487, 543)
+MAIN_ROW_XS = tuple(range(232, 336, 6))
+MAIN_ROW_MARGIN = 12
+PRACTICE_ROW = 3
+# Practice mode, the list of sections ("SECTION", legend "Select / Back" on
+# top of it, rows from y 247 on, 36.4 apart). A highlighted row is light above
+# and below its text, ROW_LINES from its centre.
+SECTION_LEGEND = (("green", 196, 226), ("red", 277, 226))
+SECTION_ROWS = tuple(262.5 + 36.4 * i for i in range(10))
+SECTION_XS = tuple(range(45, 466, 10))
+ROW_LINES = (-11, 13)
+# Practice mode, the pause menu ("PAUSED", rows from y 246 on, 36 apart). On
+# SET A / SET B POSITION the legend gets "<-> Seek" and moves to the left.
+PAUSE_LEGENDS = ((("green", 1032, 226), ("red", 1113, 226)), (("green", 996, 226), ("red", 1077, 226)))
+PAUSE_ROWS = tuple(262 + 36 * i for i in range(10))
+PAUSE_XS = tuple(range(956, 1226, 10))
+(RESUME, RESTART_SECTION, SET_A, SET_B, CLEAR_AB, NEW_SECTION,
+ PAUSE_QUICKPLAY, PAUSE_NEW_SONG, PAUSE_OPTIONS, PAUSE_QUIT) = range(10)
+# The times of A and B left of the pause menu ("A: 00:01:56"): six digits in
+# fixed cells, white on dark. A digit is told by its picture (DIGITS: 19 rows
+# of 15 dots, each row 4 hex digits), a dot or two of shift allowed.
+AB_ROWS = {"A": 326, "B": 362}
+AB_CELLS = (849, 863, 883, 897, 917, 931)
+AB_LETTER = (821, 328, 836, 344)           # the "A" / "B" in front
+DIGIT_W, DIGIT_H, DIGIT_SHIFT, DIGIT_MISS, DIGIT_SURE = 15, 19, 2, 24, 6
+DIGITS = {
+    "0": "0000000007e00e701c18181c180c380c300c300c300c300c300c380c180c18180c380ff003e0",
+    "1": "0000000001c003c007c00ec018c000c000c000c000c000c000c000c000c000c000c00ff80ff8",
+    "2": "000003e00ff01c38181818180018001800380030006000c00180030006000c001ff83ffc0000",
+    "3": "0000000007e00e701838181810180018003001e001f00038001800183018381818381ff007c0",
+    "4": "00000000006000e001e001a0032006200e200c201820302070207ffc00300020002000200020",
+    "5": "000000000ff80ff00c000c000c0008001fe01ff000380018001800180018003818701fe00fc0",
+    "6": "0000000000e001c001800380070006000dc01ff01c3838183018301c3018181818380ff007c0",
+    "7": "00003ffc3ffc00180018003000300060006000c000c00180018003000300060006000c000000",
+}
 
 
 class Picture:
@@ -215,11 +261,130 @@ def filter_is_song(pic):
     return dialog_open(pic) and width is not None and SONG_WIDTH[0] <= width <= SONG_WIDTH[1]
 
 
+def _legend(pic, dots):
+    return all(_is(colour, pic.rgb(x, y)) for colour, x, y in dots)
+
+
+def _one_light_row(pic, rows, xs, lines):
+    """The one row of `rows` (centres) whose bar is light on `lines` (offsets
+    from the centre, free of the row's text), None when not exactly one is."""
+    found = [i for i, y in enumerate(rows) if _light_share(pic, xs, [y + d for d in lines]) >= 0.9]
+    if len(found) != 1:
+        return None
+    others = [_light_share(pic, xs, [y + d for d in lines]) for i, y in enumerate(rows) if i != found[0]]
+    return found[0] if max(others, default=0) < 0.3 else None
+
+
+def main_row(pic):
+    """Highlighted row of the main menu (0 = QUICKPLAY ... PRACTICE_ROW ...
+    6 = QUIT), None when the main menu is not seen."""
+    if not _legend(pic, MAIN_LEGEND):
+        return None
+    return _one_light_row(pic, MAIN_ROWS, MAIN_ROW_XS, (-MAIN_ROW_MARGIN, 0, MAIN_ROW_MARGIN))
+
+
+def section_list(pic):
+    """Practice mode: the list of sections is up."""
+    return _legend(pic, SECTION_LEGEND)
+
+
+def section_row(pic):
+    """Highlighted row of the section list as it stands on the screen (0 =
+    top row), None when the list is not seen."""
+    return _one_light_row(pic, SECTION_ROWS, SECTION_XS, ROW_LINES) if section_list(pic) else None
+
+
+def section_rows_bits(pic):
+    """The text of the visible section rows as one picture, to see whether
+    the list scrolled."""
+    return b"".join(_text_bits(pic, (45, y - 8, 465, y + 9)) for y in SECTION_ROWS[::3])
+
+
+def pause_menu(pic):
+    """Practice mode: the pause menu is up."""
+    return any(_legend(pic, dots) for dots in PAUSE_LEGENDS)
+
+
+def pause_row(pic):
+    """Highlighted row of the pause menu (RESUME ... PAUSE_QUIT), None when
+    the menu is not seen."""
+    return _one_light_row(pic, PAUSE_ROWS, PAUSE_XS, ROW_LINES) if pause_menu(pic) else None
+
+
+def seek_legend(pic):
+    """The pause menu offers "Seek" (on SET A / SET B POSITION)."""
+    return _legend(pic, PAUSE_LEGENDS[1])
+
+
+def _template(code):
+    """DIGITS entry -> one int per row (DIGIT_W bits, left dot highest)."""
+    return [int(code[4 * r:4 * r + 4], 16) for r in range(DIGIT_H)]
+
+
+_TEMPLATES = {d: _template(code) for d, code in DIGITS.items()}
+
+
+def read_digit(pic, x0, y0):
+    """The digit in the cell at (x0, y0), None when it is none of DIGITS."""
+    s = DIGIT_SHIFT
+    width = DIGIT_W + 2 * s
+    rows = []
+    for dy in range(DIGIT_H + 2 * s):
+        bits = 0
+        for dx in range(width):
+            bits = bits << 1 | (min(pic.rgb(x0 - s + dx, y0 - s + dy)) > 120)
+        rows.append(bits)
+    if not any(rows):
+        return None
+    mask = (1 << DIGIT_W) - 1
+    best, best_miss = None, DIGIT_MISS + 1
+    # the cell where it normally is first: a clear match there ends the search
+    shifts = [(s, s)] + [(oy, ox) for oy in range(2 * s + 1) for ox in range(2 * s + 1) if (oy, ox) != (s, s)]
+    for oy, ox in shifts:
+        shift = width - DIGIT_W - ox
+        for digit, tpl in _TEMPLATES.items():
+            miss = sum(bin((rows[oy + r] >> shift & mask) ^ tpl[r]).count("1") for r in range(DIGIT_H))
+            if miss < best_miss:
+                best, best_miss = digit, miss
+        if best_miss <= DIGIT_SURE:
+            break
+    return best
+
+
+def ab_shown(pic, which="A"):
+    """The pause menu shows the time of A (or B): it is the one of the
+    practice mode (Quickplay's has no A and B)."""
+    x0, y0, x1, y1 = AB_LETTER
+    dy = AB_ROWS[which] - AB_ROWS["A"]
+    return pause_menu(pic) and _light_share(pic, range(x0, x1), range(y0 + dy, y1 + dy)) >= 0.05
+
+
+def ab_time(pic, which):
+    """The time of A or B ("A" / "B") in seconds as the pause menu shows it
+    (whole seconds), None when it cannot be read."""
+    if not ab_shown(pic, which):
+        return None
+    digits = [read_digit(pic, x, AB_ROWS[which]) for x in AB_CELLS]
+    if None in digits:
+        return None
+    h, m, s = (int(digits[i] + digits[i + 1]) for i in (0, 2, 4))
+    return h * 3600 + m * 60 + s if m < 60 and s < 60 else None
+
+
 def describe(pic):
     if pic is None:
         return "unreadable"
     if not in_song_list(pic):
-        return ("main" if main_menu(pic) else "title" if title_screen(pic)
+        if pause_menu(pic):
+            row = pause_row(pic)
+            return "paused" if row is None else f"paused-{row}"
+        if section_list(pic):
+            row = section_row(pic)
+            return "sections" if row is None else f"sections-{row}"
+        row = main_row(pic)
+        if row:
+            return f"main-{row}"
+        return ("main" if main_menu(pic) or row == 0 else "title" if title_screen(pic)
                 else "setup" if setup_panel(pic) else "other")
     if dialog_open(pic):
         return "dialog-song" if filter_is_song(pic) else "dialog"
