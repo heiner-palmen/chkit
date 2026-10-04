@@ -37,6 +37,8 @@ import sys
 import time
 
 REF_W, REF_H = 1280, 720
+# a grab after this long without one is preceded by STALE_READS that are thrown away
+STALE_AFTER_S, STALE_READS = 0.2, 4
 
 # Title screen: green and red square of the legend at the bottom.
 TITLE_LEGEND = (("green", 545, 629), ("red", 624, 629))
@@ -97,11 +99,14 @@ PAUSE_XS = tuple(range(956, 1226, 10))
  PAUSE_QUICKPLAY, PAUSE_NEW_SONG, PAUSE_OPTIONS, PAUSE_QUIT) = range(10)
 # The times of A and B left of the pause menu ("A: 00:01:56"): six digits in
 # fixed cells, white on dark. A digit is told by its picture (DIGITS: 19 rows
-# of 15 dots, each row 4 hex digits), a dot or two of shift allowed.
+# of 15 dots, each row 4 hex digits, cut from the game), a dot or two of shift
+# allowed.
 AB_ROWS = {"A": 326, "B": 362}
 AB_CELLS = (849, 863, 883, 897, 917, 931)
 AB_LETTER = (821, 328, 836, 344)           # the "A" / "B" in front
+AB_LETTER_SHARE = (0.12, 0.5)
 DIGIT_W, DIGIT_H, DIGIT_SHIFT, DIGIT_MISS, DIGIT_SURE = 15, 19, 2, 24, 6
+DIGIT_MAYBE, DIGIT_MARGIN = 45, 10
 DIGITS = {
     "0": "0000000007e00e701c18181c180c380c300c300c300c300c300c380c180c18180c380ff003e0",
     "1": "0000000001c003c007c00ec018c000c000c000c000c000c000c000c000c000c000c00ff80ff8",
@@ -111,6 +116,8 @@ DIGITS = {
     "5": "000000000ff80ff00c000c000c0008001fe01ff000380018001800180018003818701fe00fc0",
     "6": "0000000000e001c001800380070006000dc01ff01c3838183018301c3018181818380ff007c0",
     "7": "00003ffc3ffc00180018003000300060006000c000c00180018003000300060006000c000000",
+    "8": "000000000fe01c7018381818181818181c3007e00ff01c3838183018301c381818381ff007e0",
+    "9": "000000000fe01e701838301830183018381818381ff007f0006000c001c00380030007000e00",
 }
 
 
@@ -337,32 +344,42 @@ def read_digit(pic, x0, y0):
     if not any(rows):
         return None
     mask = (1 << DIGIT_W) - 1
-    best, best_miss = None, DIGIT_MISS + 1
+    misses = {}
     # the cell where it normally is first: a clear match there ends the search
     shifts = [(s, s)] + [(oy, ox) for oy in range(2 * s + 1) for ox in range(2 * s + 1) if (oy, ox) != (s, s)]
     for oy, ox in shifts:
         shift = width - DIGIT_W - ox
         for digit, tpl in _TEMPLATES.items():
             miss = sum(bin((rows[oy + r] >> shift & mask) ^ tpl[r]).count("1") for r in range(DIGIT_H))
-            if miss < best_miss:
-                best, best_miss = digit, miss
-        if best_miss <= DIGIT_SURE:
+            misses[digit] = min(miss, misses.get(digit, miss))
+        if min(misses.values()) <= DIGIT_SURE:
             break
-    return best
+    (best_miss, best), (second, _) = sorted((m, d) for d, m in misses.items())[:2]
+    # the font is drawn a little differently now and then (measured up to 27
+    # dots off): a digit that is clearly nearer than any other counts too
+    if best_miss <= DIGIT_MISS or (best_miss <= DIGIT_MAYBE and second - best_miss >= DIGIT_MARGIN):
+        return best
+    return None
 
 
-def ab_shown(pic, which="A"):
-    """The pause menu shows the time of A (or B): it is the one of the
-    practice mode (Quickplay's has no A and B)."""
+def ab_shown(pic):
+    """The pause menu shows A and B: it is the one of the practice mode
+    (Quickplay's has none). The letters are a quarter light (measured
+    0.22-0.32); a light bar over them (a dialog) is not a letter."""
+    if not pause_menu(pic):
+        return False
     x0, y0, x1, y1 = AB_LETTER
-    dy = AB_ROWS[which] - AB_ROWS["A"]
-    return pause_menu(pic) and _light_share(pic, range(x0, x1), range(y0 + dy, y1 + dy)) >= 0.05
+    for which in ("A", "B"):
+        dy = AB_ROWS[which] - AB_ROWS["A"]
+        if not AB_LETTER_SHARE[0] <= _light_share(pic, range(x0, x1), range(y0 + dy, y1 + dy)) <= AB_LETTER_SHARE[1]:
+            return False
+    return True
 
 
 def ab_time(pic, which):
     """The time of A or B ("A" / "B") in seconds as the pause menu shows it
     (whole seconds), None when it cannot be read."""
-    if not ab_shown(pic, which):
+    if not ab_shown(pic):
         return None
     digits = [read_digit(pic, x, AB_ROWS[which]) for x in AB_CELLS]
     if None in digits:
@@ -447,9 +464,21 @@ class GameWindow:
             raise OSError("cannot open X display %r" % os.environ.get("DISPLAY"))
         self._find_window = find_window
         self._window = None
+        self._last = 0.0
 
     def grab(self):
         """Picture of the window, or None if it cannot be read."""
+        if time.monotonic() - self._last > STALE_AFTER_S:
+            # Xwayland hands out the picture of the request before for the first
+            # one or two requests after a pause (04.10.2026, RoadieOne): those go
+            for _ in range(STALE_READS):
+                self._grab()
+                time.sleep(0.05)
+        pic = self._grab()
+        self._last = time.monotonic()
+        return pic
+
+    def _grab(self):
         for _ in range(2):                 # the window id is kept; once more if it is gone
             if self._window is None:
                 self._window = self._find_window()

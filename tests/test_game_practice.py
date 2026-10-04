@@ -45,22 +45,6 @@ def draw_sections(names, top, cursor, size=(1280, 720)):
     return c.picture()
 
 
-# 8 and 9 have not been seen in the game yet: made-up pictures, for the tests only
-MADE_UP = {"8": "0000000007e00e701c181818181818300ff00ff01818300c300c300c300c18180ff003e00000",
-           "9": "0000000007e00e701818300c300c300c381c1ffc0fdc001c003800700060038007000e000000"}
-
-
-def setUpModule():
-    for d, code in MADE_UP.items():
-        cs._TEMPLATES.setdefault(d, cs._template(code))
-
-
-def tearDownModule():
-    for d in MADE_UP:
-        if d not in cs.DIGITS:
-            cs._TEMPLATES.pop(d, None)
-
-
 def draw_digit(c, digit, x0, y0):
     for r, bits in enumerate(cs._TEMPLATES[digit]):
         for col in range(cs.DIGIT_W):
@@ -80,7 +64,9 @@ def draw_paused(row, a, b, practice=True, size=(1280, 720)):
         for which, seconds in (("A", a), ("B", b)):
             y = cs.AB_ROWS[which]
             x0, y0, x1, y1 = cs.AB_LETTER
-            c.rect(x0 + 3, y0 + y - cs.AB_ROWS["A"] + 2, x1 - 3, y1 + y - cs.AB_ROWS["A"] - 2, WHITE)
+            dy = y - cs.AB_ROWS["A"]
+            for x in (x0 + 2, x1 - 5):                     # the strokes of the letter
+                c.rect(x, y0 + dy + 1, x + 3, y1 + dy - 1, WHITE)
             s = int(seconds)
             text = f"{s // 3600:02d}{s // 60 % 60:02d}{s % 60:02d}"
             for x, d in zip(cs.AB_CELLS, text):
@@ -132,6 +118,11 @@ class PracticeScreenTest(unittest.TestCase):
         quickplay = draw_paused(5, 0, 0, practice=False)
         self.assertTrue(cs.pause_menu(quickplay))
         self.assertFalse(cs.ab_shown(quickplay))
+        # Quickplay's "Are you sure you want to restart?" puts a light bar over the letters
+        c = Canvas(1280, 720)
+        c.data[:] = bytearray(quickplay.data)
+        c.rect(440, 330, 840, 362, LIGHT)
+        self.assertFalse(cs.ab_shown(c.picture()))
         self.assertIsNone(cs.ab_time(quickplay, "A"))
         self.assertEqual(cs.describe(draw_paused(2, 1, 2)), "paused-2")
 
@@ -146,30 +137,32 @@ SONG_END = 160.0
 
 
 class PracticeGame:
-    """The practice mode as far as the driver sees it."""
+    """The practice mode as far as the driver sees it (as measured, see
+    chkit.game.practice)."""
 
-    def __init__(self, screen="score", sections=SECTIONS, seek_step=0.1, new_section_at_current=True):
+    def __init__(self, screen="score", sections=SECTIONS, seek_step=0.25, lose_first_select=True):
         self.screen = screen
         self.sections = sections
         self.main = 0
         self.top = self.cursor = 0
         self.running_section = None
-        self.row = 0
+        self.row = 0                    # the pause menu opens on the row used last
         self.a = self.b = None
         self.seek_step = seek_step
-        self.new_section_at_current = new_section_at_current
+        self.lose_first_select = lose_first_select
         self.keys = []
         self.speed_changes = 0
         self.stray = []
         self.loading = 0               # pictures until the list of sections is up
         self.deaf = {}
         self.drawn = {}
+        self.resumed_at = []           # where A was at each RESUME (Player.log)
 
     def bounds(self, k):
         return self.sections[k], self.sections[k + 1] if k + 1 < len(self.sections) else SONG_END
 
     def running(self):
-        return self.screen in ("loading", "sections", "playing", "paused")
+        return self.screen in ("loading", "sections", "playing", "paused", "qpaused")
 
     def picture(self):
         key = (self.screen, self.main, self.top, self.cursor, self.row,
@@ -195,6 +188,8 @@ class PracticeGame:
             return draw_sections(self.sections, self.top, self.cursor)
         if self.screen == "paused":
             return draw_paused(self.row, math.floor(self.a), math.floor(self.b))
+        if self.screen == "qpaused":
+            return draw_paused(0, 0, 0, practice=False)
         return draw_playing()
 
     def press(self, key):
@@ -229,19 +224,33 @@ class PracticeGame:
                 self.screen = "list"
         elif s == "sections":
             if key in ("UP", "DOWN"):
-                self.cursor = max(0, min(len(self.sections) - 1, self.cursor + (1 if key == "DOWN" else -1)))
+                n = len(self.sections)                     # it wraps around at both ends
+                self.cursor = (self.cursor + (1 if key == "DOWN" else -1)) % n
                 self.top = min(max(self.top, self.cursor - 9), self.cursor)
             elif key == "A":
+                if self.lose_first_select:
+                    self.lose_first_select = False
+                    return
                 self.running_section = self.cursor
                 self.a, self.b = self.bounds(self.cursor)
                 self.screen = "playing"
             else:
                 self.stray.append((s, key))
         elif s == "playing":
-            if key == "ESC":
-                self.screen, self.row = "paused", 0
+            if key == "ENTER":
+                self.screen = "paused"
             elif key in ("UP", "DOWN"):
                 self.speed_changes += 1
+            else:
+                self.stray.append((s, key))
+        elif s == "qpaused":
+            if key == "ENTER":
+                self.screen = "qplaying"
+            else:
+                self.stray.append((s, key))
+        elif s == "qplaying":
+            if key == "ENTER":
+                self.screen = "qpaused"
             else:
                 self.stray.append((s, key))
         elif s == "paused":
@@ -255,11 +264,12 @@ class PracticeGame:
                     self.b = max(self.a + 0.5, min(SONG_END, self.b + step))
             elif key == "A" and self.row == cs.RESUME:
                 self.screen = "playing"
+                self.resumed_at.append(self.a)
             elif key == "A" and self.row == cs.NEW_SECTION:
                 self.screen = "sections"
-                self.cursor = self.running_section if self.new_section_at_current else 0
+                self.cursor = self.running_section
                 self.top = max(0, self.cursor - 9)
-            elif key == "ESC":
+            elif key == "ENTER":
                 self.screen = "playing"
             else:
                 self.stray.append((s, key))
@@ -273,13 +283,27 @@ class Keys:
         self.game.press(name)
 
 
+class SeekLog:
+    """Player.log as far as RESUME goes: "Seeking to song time:<A - 2>"."""
+
+    def __init__(self, game):
+        self.game, self.seen = game, 0
+
+    def mark(self):
+        self.seen = len(self.game.resumed_at)
+
+    def first(self, timeout):
+        new = self.game.resumed_at[self.seen:]
+        return new[0] - 2.0 if new else None
+
+
 def spot(section, a, b, sections=SECTIONS):
     end = sections[section + 1] if section + 1 < len(sections) else None
     return {"section": section, "section_start": sections[section], "section_end": end, "a": a, "b": b}
 
 
 class PracticeTest(unittest.TestCase):
-    def mode(self, game, found=None, step=None):
+    def mode(self, game, found=None, seek_log=True, starts=True):
         clock = self.clock = Clock()
         self.logged = []
         search = ca.SongSearch(Keys(game), game.picture, game.running, None, sleep=clock.sleep, now=clock.now,
@@ -290,57 +314,73 @@ class PracticeTest(unittest.TestCase):
             searched.append((game.screen, name))
             return found
         search.run = run
-        mode = cp.PracticeMode(Keys(game), game.picture, game.running, search, sleep=clock.sleep,
-                               now=clock.now, log=self.logged.append)
-        mode.SEEK_STEP_S = step
-        return mode
+        return cp.PracticeMode(Keys(game), game.picture, game.running, search,
+                               seek_log=SeekLog(game) if seek_log else None, delay_s=2.0,
+                               starts=game.sections if starts else None,
+                               sleep=clock.sleep, now=clock.now, log=self.logged.append)
+
+    def assertPlaced(self, game, a, b):
+        """A on `a` or up to a step before it, B on `b` or up to a step after it."""
+        self.assertTrue(a - 0.25 < game.a <= a + 0.003, f"A at {game.a}, wanted {a}")
+        self.assertTrue(b - 0.003 <= game.b < b + 0.25, f"B at {game.b}, wanted {b}")
 
     def test_from_the_score_screen_to_the_spot(self):
         game = PracticeGame("score")
-        failed = self.mode(game).start("Kickstand", "Soundgarden", None, spot(1, 19.661, 24.896))
+        s = spot(1, 19.661, 24.896)
+        failed = self.mode(game).start("Kickstand", "Soundgarden", None, s)
         self.assertIsNone(failed)
         self.assertEqual(self.searched, [("list", "Kickstand")])
         self.assertEqual((game.screen, game.running_section), ("playing", 1))
-        self.assertEqual((math.floor(game.a), math.floor(game.b)), (19, 24))
+        self.assertPlaced(game, 19.661, 24.896)                 # B past the end of the section (23.59)
+        self.assertAlmostEqual(s["placed_a"], game.a, places=6)
         self.assertEqual((game.stray, game.speed_changes), ([], 0))
-
-    def test_exact_steps_when_the_seek_step_is_known(self):
-        game = PracticeGame("main")
-        self.assertIsNone(self.mode(game, step=0.1).start("x", "y", None, spot(1, 19.661, 24.896)))
-        self.assertAlmostEqual(game.a, 19.661, delta=0.051)        # within half a step
-        self.assertAlmostEqual(game.b, 24.896, delta=0.051)
+        self.assertEqual(game.resumed_at, [game.a])
 
     def test_section_further_down_scrolls_the_list(self):
         game = PracticeGame("list")
         self.assertIsNone(self.mode(game).start("x", "y", None, spot(11, 131.0, 140.0)))
-        self.assertEqual((game.running_section, math.floor(game.a), math.floor(game.b)), (11, 131, 140))
+        self.assertEqual(game.running_section, 11)
+        self.assertPlaced(game, 131.0, 140.0)
+
+    def test_last_section_without_a_known_end(self):
+        game = PracticeGame("main")
+        self.assertIsNone(self.mode(game).start("x", "y", None, spot(12, 143.0, 150.0)))
+        self.assertTrue(143.0 - 0.25 < game.a <= 143.0)
+        self.assertTrue(150.0 <= game.b < 151.25)               # from the shown seconds of B
 
     def test_next_spot_in_the_same_section(self):
         game = PracticeGame("main")
-        mode = self.mode(game, step=0.1)
+        mode = self.mode(game)
         first, second = spot(1, 14.0, 18.0), spot(1, 19.661, 22.5)
         self.assertIsNone(mode.start("x", "y", None, first))
         self.assertIsNone(mode.next(second, first))
         self.assertEqual(game.screen, "playing")
-        self.assertAlmostEqual(game.a, 19.661, delta=0.051)
-        self.assertAlmostEqual(game.b, 22.5, delta=0.051)
+        self.assertPlaced(game, 19.661, 22.5)
         self.assertNotIn("S", game.keys)                  # no new section, no way back
 
     def test_next_spot_in_another_section(self):
-        for at_current in (True, False):
-            with self.subTest(at_current=at_current):
-                game = PracticeGame("main", new_section_at_current=at_current)
-                mode = self.mode(game)
-                first, second = spot(1, 19.661, 24.896), spot(4, 49.689, 54.971)
-                self.assertIsNone(mode.start("x", "y", None, first))
-                failed = mode.next(second, first)
-                if at_current:
-                    self.assertIsNone(failed)
-                    self.assertEqual((game.running_section, math.floor(game.a), math.floor(game.b)), (4, 49, 54))
-                else:
-                    # the list opened at the top: the wrong section runs, A says so
-                    self.assertIn("another section", failed)
-                self.assertEqual(game.speed_changes, 0)
+        game = PracticeGame("main")
+        mode = self.mode(game)
+        first, second = spot(1, 19.661, 24.896), spot(4, 49.689, 54.971)
+        self.assertIsNone(mode.start("x", "y", None, first))
+        self.assertIsNone(mode.next(second, first))
+        self.assertEqual(game.running_section, 4)
+        self.assertPlaced(game, 49.689, 54.971)
+        self.assertEqual(game.speed_changes, 0)
+
+    def test_a_lost_seek_press_is_put_right_after_resume(self):
+        game = PracticeGame("main")
+        game.deaf["RIGHT"] = 1
+        s = spot(1, 19.661, 22.0)
+        self.assertIsNone(self.mode(game).start("x", "y", None, s))
+        self.assertPlaced(game, 19.661, 22.0)
+        self.assertEqual(len(game.resumed_at), 2)                # once more after putting it right
+        self.assertTrue(any("A is -0.25 s off" in m for m in self.logged))
+
+    def test_steps_a_little_longer_than_a_quarter(self):
+        game = PracticeGame("main", seek_step=0.2509)
+        self.assertIsNone(self.mode(game).start("x", "y", None, spot(3, 45.2, 46.9)))
+        self.assertTrue(abs(game.a - 45.2) < 0.25)
 
     def test_nothing_while_a_song_runs(self):
         game = PracticeGame("playing")
@@ -356,19 +396,74 @@ class PracticeTest(unittest.TestCase):
 
     def test_a_missed_pause_key_is_pressed_again(self):
         game = PracticeGame("main")
-        game.deaf["ESC"] = 1
         self.assertIsNone(self.mode(game).start("x", "y", None, spot(2, 26.0, 33.0)))
-        self.assertEqual(game.keys.count("ESC"), 2)
+        game.deaf["ENTER"] = 1
+        self.assertIsNone(self.mode(game).next(spot(5, 60.0, 64.0), spot(2, 26.0, 33.0)))
+        self.assertEqual(game.running_section, 5)
+
+    def test_pause_menu_left_open_is_taken_as_it_is(self):
+        game = PracticeGame("main")
+        mode = self.mode(game)
+        first = spot(1, 19.661, 24.896)
+        self.assertIsNone(mode.start("x", "y", None, first))
+        game.screen = "paused"                                   # a step before stopped in the menu
+        self.assertIsNone(mode.next(spot(2, 32.696, 37.872), first))
+        self.assertEqual((game.screen, game.running_section), ("playing", 2))
+        self.assertPlaced(game, 32.696, 37.872)
+
+    def test_wrong_idea_of_the_running_section_is_put_right(self):
+        # a step before stopped after choosing section 2, the tool still thinks 1 runs
+        game = PracticeGame("main")
+        mode = self.mode(game)
+        self.assertIsNone(mode.start("x", "y", None, spot(2, 26.0, 30.0)))
+        self.assertIsNone(mode.next(spot(4, 49.689, 54.971), spot(1, 19.661, 24.896)))
+        self.assertEqual(game.running_section, 4)
+        self.assertPlaced(game, 49.689, 54.971)
+        self.assertTrue(any("section 5 runs, not 4" in m for m in self.logged))   # 3 down from 2
+
+    def test_up_to_ten_sections_the_row_tells_which_runs(self):
+        sections = SECTIONS[:8]
+        game = PracticeGame("main", sections=sections)
+        mode = self.mode(game)
+        self.assertIsNone(mode.start("x", "y", None, spot(2, 26.0, 30.0, sections)))
+        self.assertIsNone(mode.next(spot(5, 60.0, 64.0, sections), spot(1, 19.661, 24.896, sections)))
+        self.assertEqual(game.running_section, 5)
+        self.assertFalse(any("choosing again" in m for m in self.logged))
+
+    def test_next_spot_in_the_same_section_starts_from_its_bounds(self):
+        game = PracticeGame("main")
+        game.deaf["RIGHT"] = 0
+        mode = self.mode(game)
+        first, second = spot(3, 37.0, 40.0), spot(3, 44.0, 46.0)
+        self.assertIsNone(mode.start("x", "y", None, first))
+        self.assertIsNone(mode.next(second, first))
+        self.assertEqual(game.running_section, 3)
+        self.assertPlaced(game, 44.0, 46.0)
+
+    def test_quickplay_pause_menu_is_left_alone(self):
+        game = PracticeGame("qplaying")
+        failed = self.mode(game).next(spot(2, 26.0, 33.0), spot(1, 19.0, 24.0))
+        self.assertEqual(failed, "this is not the practice mode")
+        self.assertEqual(game.screen, "qplaying")                # paused and played on
+        self.assertEqual(game.stray, [])
 
     def test_spot_after_the_old_b_moves_b_first(self):
-        game = PracticeGame("main", seek_step=0.1)
-        mode = self.mode(game, step=0.1)
-        # section 1 is 13.06 .. 23.59: a spot from 20 to 30 needs B past the old B
-        # first, else A would have to pass it
-        self.assertIsNone(mode.start("x", "y", None, spot(1, 14.0, 16.0)))
-        self.assertIsNone(mode.next(spot(1, 17.0, 21.0), spot(1, 14.0, 16.0)))
-        self.assertAlmostEqual(game.a, 17.0, delta=0.051)
-        self.assertAlmostEqual(game.b, 21.0, delta=0.051)
+        game = PracticeGame("main")
+        mode = self.mode(game)
+        # section 1 is 13.06 .. 23.59: A at 14..16 first, then a spot from 17 to 21
+        # (A would have to pass the old B at 16 if it went first)
+        first = spot(1, 14.0, 16.0)
+        self.assertIsNone(mode.start("x", "y", None, first))
+        self.assertIsNone(mode.next(spot(1, 17.0, 21.0), first))
+        self.assertPlaced(game, 17.0, 21.0)
+
+    def test_presses(self):
+        mode = self.mode(PracticeGame())
+        self.assertEqual(mode.presses("A", 19.661, 13.056), 26)  # 19.556: before the bar line
+        self.assertEqual(mode.presses("B", 24.896, 23.587), 6)   # 25.087: after it
+        self.assertEqual(mode.presses("A", 13.056, 13.056), 0)
+        self.assertEqual(mode.presses("A", 15.556, 13.056), 10)  # on the dot (2 ms of slack)
+        self.assertEqual(mode.presses("B", 20.0, 23.587), -14)
 
 
 if __name__ == "__main__":
