@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0 (2026-10-04)
+
+- `chkit.groove`: groove fingerprint of a drum chart (the averaged bar pattern of kick, snare, cymbals and toms on a 12-per-quarter grid, tempo, feel numbers, a one-line summary such as `4/4 · 8ths · snare 2+4 · 172 BPM`) and `similarity()` of two fingerprints: pattern first, then tempo, then feel; a song played at double tempo counts as alike, slightly less than the same pattern.
+
 ## 0.2.1 (2026-10-03)
 
 - `.mid` reader: tom markers and flams are looked up by bisection instead of a scan over all marker spans per note. A discography chart (199,002 notes, every tom marked on its own) took 33 s to read, now 1.1 s.
