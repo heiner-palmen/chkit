@@ -74,6 +74,16 @@ def draw_paused(row, a, b, practice=True, size=(1280, 720)):
     return c.picture()
 
 
+def draw_confirm(row=cs.PAUSE_QUIT, size=(1280, 720)):
+    """QUIT asks: the pause menu with "Are you sure ...?" over it, YES highlighted."""
+    pic = draw_paused(row, 19, 25, size=size)
+    c = Canvas(*size)
+    c.data[:] = bytearray(pic.data)
+    c.rect(440, 244, 840, 440, (40, 40, 40))
+    c.rect(440, 330, 840, 362, LIGHT)
+    return c.picture()
+
+
 def draw_playing(size=(1280, 720)):
     c = Canvas(*size)
     c.rect(470, 300, 940, 720, (40, 40, 40))           # the highway
@@ -125,6 +135,9 @@ class PracticeScreenTest(unittest.TestCase):
         self.assertFalse(cs.ab_shown(c.picture()))
         self.assertIsNone(cs.ab_time(quickplay, "A"))
         self.assertEqual(cs.describe(draw_paused(2, 1, 2)), "paused-2")
+        self.assertTrue(cs.confirm_yes(draw_confirm()))
+        self.assertFalse(cs.confirm_yes(draw_paused(cs.PAUSE_QUIT, 19, 25)))
+        self.assertFalse(cs.ab_shown(draw_confirm()))
 
     def test_every_known_digit_is_read(self):
         for seconds in (0, 1, 22, 33, 44, 55, 66 * 60 + 7, 3600 + 17 * 60 + 4):
@@ -190,6 +203,8 @@ class PracticeGame:
             return draw_paused(self.row, math.floor(self.a), math.floor(self.b))
         if self.screen == "qpaused":
             return draw_paused(0, 0, 0, practice=False)
+        if self.screen == "confirm":
+            return draw_confirm()
         return draw_playing()
 
     def press(self, key):
@@ -243,6 +258,11 @@ class PracticeGame:
                 self.speed_changes += 1
             else:
                 self.stray.append((s, key))
+        elif s == "confirm":
+            if key == "A":
+                self.screen, self.main, self.running_section = "main", 0, None
+            else:
+                self.stray.append((s, key))
         elif s == "qpaused":
             if key == "ENTER":
                 self.screen = "qplaying"
@@ -265,6 +285,8 @@ class PracticeGame:
             elif key == "A" and self.row == cs.RESUME:
                 self.screen = "playing"
                 self.resumed_at.append(self.a)
+            elif key == "A" and self.row == cs.PAUSE_QUIT:
+                self.screen = "confirm"
             elif key == "A" and self.row == cs.NEW_SECTION:
                 self.screen = "sections"
                 self.cursor = self.running_section
@@ -456,6 +478,14 @@ class PracticeTest(unittest.TestCase):
         self.assertIsNone(mode.start("x", "y", None, first))
         self.assertIsNone(mode.next(spot(1, 17.0, 21.0), first))
         self.assertPlaced(game, 17.0, 21.0)
+
+    def test_quit_to_the_main_menu(self):
+        game = PracticeGame("main")
+        mode = self.mode(game)
+        self.assertIsNone(mode.start("x", "y", None, spot(2, 26.0, 30.0)))
+        self.assertIsNone(mode.quit())
+        self.assertEqual((game.screen, game.stray, game.speed_changes), ("main", [], 0))
+        self.assertFalse(game.running())
 
     def test_presses(self):
         mode = self.mode(PracticeGame())

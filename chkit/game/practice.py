@@ -8,6 +8,7 @@ that it means what it should (chkit.game.screen), like the song search.
                                          song, its section, A and B, play
     .next(spot, previous)                while the practice runs at the spot `previous`: the
                                          next spot (A/B in the same section, or a new section)
+    .quit()                              leave the practice mode for the main menu
 
 A spot is a dict: "section" (index in the section list, the chart's sections
 in order), "section_start" / "section_end" (seconds, end None for the last),
@@ -29,6 +30,8 @@ What the practice mode does (v1.1.0.6142, measured 04.10.2026):
     "Seeking to song time:<A - delay>" to Player.log: that tells where A
     really is. After B (and 1 s more) it goes back to A.
   - NEW SECTION opens the list on the section that runs.
+  - QUIT asks "Are you sure you want to quit?" with YES highlighted; YES goes
+    to the main menu.
   - Up/down change the speed while a song plays: no key goes to the game
     unless a menu is seen.
 
@@ -348,6 +351,18 @@ class PracticeMode:
             spot["placed_a"] = placed
             if failed:
                 return failed
+        return None
+
+    def quit(self):
+        """Out of the practice mode: pause, QUIT, YES, the main menu."""
+        failed = self.pause() or self.to_row(cs.PAUSE_QUIT)
+        if failed:
+            return failed
+        if self.press_until(SELECT, cs.confirm_yes, self.MENU_S) is None:
+            return "QUIT did not ask"
+        self.sleep(0.3)
+        if self.press_until(SELECT, lambda p: cs.main_row(p) is not None, 6, tries=1) is None:
+            return "the main menu did not come up after QUIT"
         return None
 
     # -- the whole way -----------------------------------------------------------------

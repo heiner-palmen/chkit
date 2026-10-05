@@ -20,6 +20,7 @@ Linux, X11 (also Xwayland); libX11 through ctypes, no extra packages.
   pause_row(pic)           its highlighted row (RESUME, RESTART_SECTION, SET_A, SET_B, ...), or None
   ab_shown(pic)            the pause menu is the practice mode's (it shows A and B)
   ab_time(pic, "A")        the time of A (or "B") in whole seconds, or None
+  confirm_yes(pic)         the pause menu asks "Are you sure ...?", YES highlighted
   describe(pic)            all of it in one word, for logs
 
 Clone Hero has no interface for this, so it is read off the picture: a few
@@ -105,6 +106,10 @@ AB_ROWS = {"A": 326, "B": 362}
 AB_CELLS = (849, 863, 883, 897, 917, 931)
 AB_LETTER = (821, 328, 836, 344)           # the "A" / "B" in front
 AB_LETTER_SHARE = (0.12, 0.5)
+# The question over the pause menu ("Are you sure you want to quit?"): YES and
+# NO in the middle of the screen, YES highlighted when it comes up.
+CONFIRM_XS = tuple(range(450, 831, 10))
+CONFIRM_YES, CONFIRM_NO = (333, 359), (380,)
 DIGIT_W, DIGIT_H, DIGIT_SHIFT, DIGIT_MISS, DIGIT_SURE = 15, 19, 2, 24, 6
 DIGIT_MAYBE, DIGIT_MARGIN = 45, 10
 DIGITS = {
@@ -374,6 +379,12 @@ def ab_shown(pic):
         if not AB_LETTER_SHARE[0] <= _light_share(pic, range(x0, x1), range(y0 + dy, y1 + dy)) <= AB_LETTER_SHARE[1]:
             return False
     return True
+
+
+def confirm_yes(pic):
+    """The pause menu asks "Are you sure ...?" and YES is highlighted."""
+    return (pause_menu(pic) and _light_share(pic, CONFIRM_XS, CONFIRM_YES) >= 0.9
+            and _light_share(pic, CONFIRM_XS, CONFIRM_NO) < 0.1)
 
 
 def ab_time(pic, which):
