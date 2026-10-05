@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 (2026-10-05)
+
+- `chkit.groove` fingerprint version 2 (stored fingerprints of version 1 are computed again): songs that feel alike to play come out alike. Version 1 averaged one bar pattern over the whole song: 300 to 1,000 charts matched a typical rock song's pattern by 90 % or more, so the tempo picked among them, and the feel numbers (a fifth of an arithmetic mean) could not push anything out; a slow pop song and a busy metal song at the same BPM came out 86-90 % alike.
+  - Fingerprint: up to three grooves per song (bars that play alike, with their share of the groove time; bars of hi-hat or kick alone are no groove) with the voices kick, snare, hands (whatever keeps time: hi-hat, ride, crash or a tom) and other; histograms of the note distances of kick, snare and hands in seconds, which do not change with the notation (a song written at 92 or at 184 BPM); feel numbers per second (notes, hands, kick, time keeping, snare, the busiest bars) and as shares (kicks off the beat, on 16ths, in quick runs, on every beat; snare on the beat; triplets; fills; toms; crashes; even bars; other grooves; which cymbal keeps time). Summary with the time-keeping cymbal: `4/4 · 8ths ride · snare 2+4 · 158 BPM`.
+  - `similarity()`: weighted geometric mean of feel 0.5, pattern 0.2, rhythm 0.2 and tempo 0.1, so a song far off in one part drops. Grooves are matched to the best groove of the other song by share, 2/4 bars against 4/4 bars, bar lines half a bar apart (x 0.9); double tempo only weakens the pattern (x 0.85). `explain()` names the feel number furthest apart, e.g. `feel 28 % (notes 3.4/7.0 per s)`. `similarity(a, b, details=False)` returns the score alone, for ranking (about 30 µs a pair).
+  - Measured on 846 charts of the library against version 1: another chart of the same song ranks first 88 % of the time (79 %), the other songs of an album rank at 30 % of the list on average (37 %; 50 = chance), slow songs get 14 % far busier songs in their top 10 (41 %).
+- `chkit.game.practice`: `quit()` leaves the practice mode for the main menu (QUIT, then YES; `screen.confirm_yes` tells the question).
+- `.mid` reader: a file with fewer tracks than its header says is read (Clone Hero plays it); chunks of another kind are skipped, as the standard says.
+
 ## 0.4.0 (2026-10-04)
 
 - `chkit.game.practice`: sets up Clone Hero's practice mode for one spot of a song, from the menu or the score screen: Practice, the song (the same search), its section, then A and B moved by Seek in the pause menu (0.25 s a press), and play. `next()` goes to the next spot through NEW SECTION, so A and B always start from the known section bounds. A is checked afterwards by the seek the game writes to `Player.log` and set again when a key press got lost; a wrong idea of the running section is put right by what A shows. Measured with v1.1.0.6142: Enter pauses, B may pass the end of the section, the list of sections opens on the running one.

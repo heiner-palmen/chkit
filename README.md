@@ -8,7 +8,7 @@ Building blocks for Clone Hero tools, in plain Python (standard library only, Py
 | `chkit.song` | Song folders: `song.ini` (UTF-8 or cp1252), the chart file Clone Hero plays, its MD5 (the checksum Clone Hero keys scores by), audio tracks, text helpers (formatting tags, charter lists, accent-free search keys). |
 | `chkit.chfiles` | Files of the game: `currentsong.txt`, `scorestats.json`, `scoredata.bin` (decoded: playcount, best score, stars, percent, full combo), MIDI profiles (which kit note is which pad), and a simple playlist format. |
 | `chkit.io` | Atomic writes (temp file + rename), copying from network folders through a child process with a timeout (a stale CIFS mount cannot hang the caller), JSON that tolerates half-written files. |
-| `chkit.groove` | A groove fingerprint per chart (bar pattern per voice, tempo, feel, a one-line summary) and how alike two songs feel to play, 0–100 %, with the reasons. |
+| `chkit.groove` | A groove fingerprint per chart (the grooves of the song, its rhythm in seconds, tempo, feel, a one-line summary) and how alike two songs feel to play, 0–100 %, with the reasons. |
 | `chkit.game` | Drives the running game (Linux, X11/Xwayland): reads its window to tell which menu is up, puts the cursor of the song list on a song or an artist, and sets up the practice mode for a spot (section, A and B). Keys go out only where the screen shows they mean what they should. |
 
 ```python
@@ -27,14 +27,14 @@ print(song.chart_md5(song.find_chart("Songs/Dio - The Last in Line")))
 ```python
 from chkit import chart, groove
 
-a = groove.fingerprint(chart.read("Songs/AC-DC - Back in Black/notes.mid"))
-b = groove.fingerprint(chart.read("Songs/Metallica - Devil's Dance/notes.mid"))
-print(a["summary"])                                  # 4/4 · 8ths · snare 2+4 · 94 BPM
+a = groove.fingerprint(chart.read("Songs/AC-DC - Back in Black (Live)/notes.mid"))
+b = groove.fingerprint(chart.read("Songs/Metallica - Devils Dance (Live with the SFSO)/notes.mid"))
+print(a["summary"])                                  # 4/4 · 8ths hi-hat · snare 2+4 · 94 BPM
 score, parts = groove.similarity(groove.prepare(a), groove.prepare(b))
-print(f"{score:.0%}", groove.explain(parts))         # 96% beat 95 % · tempo 94/96 BPM · feel 96 %
+print(f"{score:.0%}", groove.explain(parts))         # 93% beat 89 % · tempo 94/95 BPM · feel 94 %
 ```
 
-The pattern counts most (where kick, snare, cymbals and toms fall in the bar, averaged over the bars that are not fills), then the tempo, then the feel (notes per second, fills, triplets, 16ths, ride). 16ths at 90 BPM and 8ths at 180 BPM count as alike (the same hand speed), a bit less than the same pattern. A fingerprint is a small dict (`encode`/`decode` for storing it); `prepare` it once to compare it with many others (about 15 µs per pair).
+How alike two songs feel is a weighted geometric mean of four parts, so a song far off in one of them drops: the feel (half of it: notes, hands and kick per second, the busiest bars, kicks off the beat and in quick runs, triplets, fills, toms, crashes, which cymbal keeps time), the pattern (the grooves of one song against the best matching grooves of the other, by their share of the song), the rhythm (how far apart the notes of kick, snare and hands come in seconds, the same however the chart is notated) and the tempo. 16ths at 90 BPM and 8ths at 180 BPM are compared as alike (the same hand speed), their pattern counts a bit less. A fingerprint is a small dict (`encode`/`decode` for storing it, `decode` returns None for another `VERSION`); `prepare` it once to compare it with many others (about 30 µs per pair with `details=False`).
 
 ## Searching a song in the running game
 
