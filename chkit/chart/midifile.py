@@ -53,14 +53,19 @@ def read_tracks(blob: bytes) -> tuple[int, list[dict]]:
     [(tick, numerator, denominator)]}. ValueError for a file that is not MIDI."""
     if blob[:4] != b"MThd":
         raise ValueError("not a MIDI file")
-    _length, _fmt, ntracks, division = struct.unpack(">IHHH", blob[4:14])
+    header, _fmt, ntracks, division = struct.unpack(">IHHH", blob[4:14])
     if division & 0x8000:
         raise ValueError("SMPTE time division is not supported")
-    pos, tracks = 14, []
+    pos, tracks = 8 + header, []
     for _ in range(ntracks):
-        if blob[pos:pos + 4] != b"MTrk":
-            raise ValueError("broken MIDI track header")
-        length = struct.unpack(">I", blob[pos + 4:pos + 8])[0]
+        if pos + 8 > len(blob):
+            break                                # fewer tracks than the header says: the game plays it too
+        tag, length = blob[pos:pos + 4], struct.unpack(">I", blob[pos + 4:pos + 8])[0]
+        if tag != b"MTrk":
+            if not tag.isalpha():
+                raise ValueError("broken MIDI track header")
+            pos += 8 + length                    # a chunk of another kind: skipped (the standard says so)
+            continue
         data = blob[pos + 8:pos + 8 + length]
         pos += 8 + length
         track = {"name": "", "notes": [], "texts": [], "tempo": [], "sigs": []}

@@ -223,6 +223,20 @@ class MidiFileTest(unittest.TestCase):
         self.assertEqual(c.notes[0].t, 3.0)
         self.assertEqual(c.time_signatures, [(0, 4, 4), (1920, 6, 8)])
 
+    def test_fewer_tracks_than_the_header_says(self):
+        # 05.10. (Ozzy Osbourne - Patient Number 9, oemmes_): the header says 4 tracks,
+        # the file ends after 3; Clone Hero plays it
+        tracks = [smf.track(tempo=[(0, 120)], sigs=[(0, 4, 4)]), drums([(0, 96, 10, 100), (480, 97, 10, 100)])]
+        blob = bytearray(smf.midi(tracks))
+        blob[10:12] = (4).to_bytes(2, "big")
+        c = chart.read(self.f.write("notes.mid", bytes(blob)), "expert", {})
+        self.assertEqual([n.tick for n in c.notes], [0, 480])
+        # and a chunk of another kind between the tracks is skipped
+        blob = smf.midi([tracks[0], b"XFIH" + (3).to_bytes(4, "big") + b"abc", tracks[1]])
+        blob = blob[:10] + (3).to_bytes(2, "big") + blob[12:]
+        c = chart.read(self.f.write("other.mid", blob), "expert", {})
+        self.assertEqual([n.tick for n in c.notes], [0, 480])
+
     def test_no_drum_track_and_not_midi(self):
         with self.assertRaises(ValueError):
             chart.read(self.f.write("notes.mid", smf.midi([smf.track(tempo=[(0, 120)])])), ini={})
